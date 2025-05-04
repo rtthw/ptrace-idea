@@ -3,4 +3,14 @@ name = "ptrace-idea"
 version = "0.1.0"
 edition = "2024"
 
+[[bin]]
+name = "client"
+
 [dependencies]
+anyhow = "1"
+nix = { version = "0.29", features = [
+    "fs",
+    "personality",
+    "process",
+    "ptrace",
+] }

@@ -1,10 +1,10 @@
+[workspace]
+members = ["client"]
+
 [package]
 name = "ptrace-idea"
 version = "0.1.0"
 edition = "2024"
-
-[[bin]]
-name = "client"
 
 [dependencies]
 anyhow = "1"

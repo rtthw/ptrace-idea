@@ -23,7 +23,7 @@ fn run_as_client() {
 
     // `Command::exec` doesn't change the PID, so we can just ask now.
     ptrace::traceme().expect("OS could not be bothered to trace me");
-    let e = std::process::Command::new("./target/release/client").exec();
+    let e = std::process::Command::new("./target/debug/client").exec();
 
     unreachable!("Command::exec failed, this process should be dead: {e}")
 }

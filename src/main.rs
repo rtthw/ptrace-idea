@@ -100,7 +100,8 @@ fn handle_sigtrap(pid_t: nix::unistd::Pid) -> Result<()> {
         return Ok(());
     }
 
-    println!("SC @ {pid_t} : {}", regs.orig_rax);
+    // println!("SC @ {pid_t} :");
+    print_syscall(&regs);
 
     Ok(())
 }
@@ -114,4 +115,50 @@ fn setup_tracing(pid: nix::unistd::Pid) -> Result<()> {
     )?;
 
     Ok(())
+}
+
+
+
+fn print_syscall(regs: &nix::libc::user_regs_struct) {
+    match regs.orig_rax {
+        0 => println!("read(fd={}, buf={}, count={})", regs.rdi, regs.rsi, regs.rdx),
+        1 => println!("write(fd={}, buf={}, count={})", regs.rdi, regs.rsi, regs.rdx),
+        2 => println!("open(filename={}, flags={}, mode={})", regs.rdi, regs.rsi, regs.rdx),
+        3 => println!("close(fd={})", regs.rdi),
+
+        4 => println!("stat(filename={}, statbuf={})", regs.rdi, regs.rsi),
+        5 => println!("fstat(fd={}, statbuf={})", regs.rdi, regs.rsi),
+        6 => println!("lstat(filename={}, statbuf={})", regs.rdi, regs.rsi),
+
+        7 => println!("poll(ufds={}, nfds={}, timeout_msecs={})", regs.rdi, regs.rsi, regs.rdx),
+        8 => println!("lseek(fd={}, offset={}, origin={})", regs.rdi, regs.rsi, regs.rdx),
+
+        9 => println!("mmap(addr={}, len={}, prot={}, flags={}, fd={}, off={})",
+            regs.rdi, regs.rsi, regs.rdx, regs.r10, regs.r8, regs.r9),
+        10 => println!("mprotect(start={}, len={}, prot={})", regs.rdi, regs.rsi, regs.rdx),
+        11 => println!("munmap(addr={}, len={})", regs.rdi, regs.rsi),
+
+        12 => println!("brk(brk={})", regs.rdi),
+
+        17 => println!("pread64(fd={}, buf={}, count={}, pos={})",
+            regs.rdi, regs.rsi, regs.rdx, regs.r10),
+        18 => println!("pwrite64(fd={}, buf={}, count={}, pos={})",
+            regs.rdi, regs.rsi, regs.rdx, regs.r10),
+
+        21 => println!("access(filename={}, mode={})", regs.rdi, regs.rsi),
+
+        29 => println!("shmget(key={}, size={}, shmflg={})", regs.rdi, regs.rsi, regs.rdx),
+        30 => println!("shmat(shmid={}, shmaddr={}, shmflg={})", regs.rdi, regs.rsi, regs.rdx),
+        31 => println!("shmctl(shmid={}, cmd={}, buf={})", regs.rdi, regs.rsi, regs.rdx),
+
+        257 => println!("openat(dfd={}, filename={}, flags={}, mode={})",
+            regs.rdi, regs.rsi, regs.rdx, regs.r10),
+        262 => println!("newfstatat(dfd={}, filename={}, statbuf={}, flags={})",
+            regs.rdi, regs.rsi, regs.rdx, regs.r10),
+
+        317 => println!("seccomp(op={}, flags={}, uargs={})", regs.rdi, regs.rsi, regs.rdx),
+        318 => println!("getrandom(buf={}, count={}, flags={})", regs.rdi, regs.rsi, regs.rdx),
+
+        other => println!("Unknown Syscall: {other}"),
+    }
 }

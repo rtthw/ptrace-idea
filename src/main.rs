@@ -1,10 +1,12 @@
 
 
 
+mod init_seccomp;
+
 use std::os::unix::process::CommandExt as _;
 
 use anyhow::Result;
-use nix::{libc::ENOSYS, sys::{ptrace, signal::Signal, wait::wait}};
+use nix::{libc::ENOSYS, sys::{ptrace, signal::Signal, wait::wait}, unistd::Pid};
 
 
 
@@ -28,7 +30,7 @@ fn run_as_client() {
     unreachable!("Command::exec failed, this process should be dead: {e}")
 }
 
-fn run_as_server(pid: nix::unistd::Pid) {
+fn run_as_server(pid: Pid) {
     let ws = wait().expect("server failed to wait for client to be ready");
     println!("[INFO] Client ready with signal: {ws:?}");
 
@@ -72,7 +74,7 @@ fn wait_for_signal(rt: &mut Runtime) -> Result<()> {
     }
 }
 
-fn handle_client_stopped(rt: &mut Runtime, sig: Signal, pid: nix::unistd::Pid) -> Result<()> {
+fn handle_client_stopped(rt: &mut Runtime, sig: Signal, pid: Pid) -> Result<()> {
     match sig {
         Signal::SIGTRAP => handle_sigtrap(rt, pid),
         Signal::SIGSTOP => {
@@ -91,7 +93,7 @@ fn handle_client_stopped(rt: &mut Runtime, sig: Signal, pid: nix::unistd::Pid) -
     }
 }
 
-fn handle_sigtrap(rt: &mut Runtime, pid: nix::unistd::Pid) -> Result<()> {
+fn handle_sigtrap(rt: &mut Runtime, pid: Pid) -> Result<()> {
     let regs = ptrace::getregs(pid)?;
     if regs.rax == -ENOSYS as u64 {
         rt.on_syscall_enter(pid, &regs)
@@ -100,7 +102,7 @@ fn handle_sigtrap(rt: &mut Runtime, pid: nix::unistd::Pid) -> Result<()> {
     }
 }
 
-fn setup_tracing(pid: nix::unistd::Pid) -> Result<()> {
+fn setup_tracing(pid: Pid) -> Result<()> {
     ptrace::setoptions(
         pid,
         ptrace::Options::PTRACE_O_TRACEFORK
@@ -163,10 +165,7 @@ fn print_syscall(regs: &nix::libc::user_regs_struct) {
 pub struct Runtime {}
 
 impl Runtime {
-    pub fn on_syscall_enter(
-        &mut self, pid: nix::unistd::Pid,
-        regs: &nix::libc::user_regs_struct,
-    ) -> Result<()> {
+    pub fn on_syscall_enter(&mut self, pid: Pid, regs: &nix::libc::user_regs_struct) -> Result<()> {
         match regs.orig_rax {
             12 => {
                 if regs.rdi == 555 {
@@ -179,10 +178,7 @@ impl Runtime {
         Ok(())
     }
 
-    pub fn on_syscall_exit(
-        &mut self, pid: nix::unistd::Pid,
-        regs: &nix::libc::user_regs_struct,
-    ) -> Result<()> {
+    pub fn on_syscall_exit(&mut self, pid: Pid, regs: &nix::libc::user_regs_struct) -> Result<()> {
         print_syscall(&regs);
         ptrace::syscall(pid, None)?;
         Ok(())

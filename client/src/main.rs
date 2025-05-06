@@ -3,6 +3,7 @@
 
 fn main() {
     syscall1(12, 555);
+    println!("[CLIENT]");
 }
 
 

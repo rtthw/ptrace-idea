@@ -14,7 +14,7 @@ fn main() {
     match unsafe { nix::unistd::fork() } {
         Ok(nix::unistd::ForkResult::Child) => run_as_client(),
         Ok(nix::unistd::ForkResult::Parent { child }) => run_as_server(child),
-        Err(e) => panic!("Couldn't fork the main process: {}", e),
+        Err(e) => panic!("[FATAL] Couldn't fork the main process: {}", e),
     };
 }
 
@@ -35,8 +35,9 @@ fn run_as_server(pid: nix::unistd::Pid) {
     setup_tracing(pid).unwrap();
     ptrace::syscall(pid, None).unwrap();
 
+    let mut rt = Runtime {};
     loop {
-        match wait_for_signal() {
+        match wait_for_signal(&mut rt) {
             Ok(_) => {}
             Err(e) => {
                 println!("Error: {e}");
@@ -46,10 +47,10 @@ fn run_as_server(pid: nix::unistd::Pid) {
     }
 }
 
-fn wait_for_signal() -> Result<()> {
+fn wait_for_signal(rt: &mut Runtime) -> Result<()> {
     match wait()? {
-        nix::sys::wait::WaitStatus::Stopped(pid_t, sig_num) => {
-            handle_client_stopped(sig_num, pid_t)
+        nix::sys::wait::WaitStatus::Stopped(pid, sig) => {
+            handle_client_stopped(rt, sig, pid)
         }
 
         nix::sys::wait::WaitStatus::Exited(pid, exit_status) => {
@@ -71,39 +72,32 @@ fn wait_for_signal() -> Result<()> {
     }
 }
 
-fn handle_client_stopped(sig_num: Signal, pid_t: nix::unistd::Pid) -> Result<()> {
-    match sig_num {
-        Signal::SIGTRAP => {
-            handle_sigtrap(pid_t)?;
-            Ok(ptrace::syscall(pid_t, None)?)
-        }
+fn handle_client_stopped(rt: &mut Runtime, sig: Signal, pid: nix::unistd::Pid) -> Result<()> {
+    match sig {
+        Signal::SIGTRAP => handle_sigtrap(rt, pid),
         Signal::SIGSTOP => {
-            println!("SIGSTOP in {pid_t}");
-            Ok(ptrace::syscall(pid_t, Some(Signal::SIGSTOP))?)
+            println!("SIGSTOP in {pid}");
+            Ok(ptrace::syscall(pid, Some(Signal::SIGSTOP))?)
         }
-        Signal::SIGSEGV => Ok(ptrace::syscall(pid_t, Some(Signal::SIGSEGV))?),
+        Signal::SIGSEGV => Ok(ptrace::syscall(pid, Some(Signal::SIGSEGV))?),
         Signal::SIGWINCH => {
             println!("Received SIGWINCH");
-            Ok(ptrace::syscall(pid_t, Some(Signal::SIGWINCH))?)
+            Ok(ptrace::syscall(pid, Some(Signal::SIGWINCH))?)
         }
         _ => {
-            println!("Stopped with unexpected signal: {sig_num:?}");
-            Ok(ptrace::syscall(pid_t, Some(sig_num))?)
+            println!("Stopped with unexpected signal: {sig:?}");
+            Ok(ptrace::syscall(pid, Some(sig))?)
         }
     }
 }
 
-fn handle_sigtrap(pid_t: nix::unistd::Pid) -> Result<()> {
-    let regs = ptrace::getregs(pid_t)?;
+fn handle_sigtrap(rt: &mut Runtime, pid: nix::unistd::Pid) -> Result<()> {
+    let regs = ptrace::getregs(pid)?;
     if regs.rax == -ENOSYS as u64 {
-        // Syscall started. We're not blocking anything (yet), so do nothing.
-        return Ok(());
+        rt.on_syscall_enter(pid, &regs)
+    } else {
+        rt.on_syscall_exit(pid, &regs)
     }
-
-    // println!("SC @ {pid_t} :");
-    print_syscall(&regs);
-
-    Ok(())
 }
 
 fn setup_tracing(pid: nix::unistd::Pid) -> Result<()> {
@@ -111,7 +105,8 @@ fn setup_tracing(pid: nix::unistd::Pid) -> Result<()> {
         pid,
         ptrace::Options::PTRACE_O_TRACEFORK
             .union(ptrace::Options::PTRACE_O_TRACECLONE)
-            .union(ptrace::Options::PTRACE_O_TRACEVFORK),
+            .union(ptrace::Options::PTRACE_O_TRACEVFORK)
+            .union(ptrace::Options::PTRACE_O_TRACESYSGOOD),
     )?;
 
     Ok(())
@@ -160,5 +155,36 @@ fn print_syscall(regs: &nix::libc::user_regs_struct) {
         318 => println!("getrandom(buf={}, count={}, flags={})", regs.rdi, regs.rsi, regs.rdx),
 
         other => println!("Unknown Syscall: {other}"),
+    }
+}
+
+
+
+pub struct Runtime {}
+
+impl Runtime {
+    pub fn on_syscall_enter(
+        &mut self, pid: nix::unistd::Pid,
+        regs: &nix::libc::user_regs_struct,
+    ) -> Result<()> {
+        match regs.orig_rax {
+            12 => {
+                if regs.rdi == 555 {
+                    println!("[INFO] Received custom syscall");
+                }
+            }
+            _ => {}
+        }
+        ptrace::syscall(pid, None)?;
+        Ok(())
+    }
+
+    pub fn on_syscall_exit(
+        &mut self, pid: nix::unistd::Pid,
+        regs: &nix::libc::user_regs_struct,
+    ) -> Result<()> {
+        print_syscall(&regs);
+        ptrace::syscall(pid, None)?;
+        Ok(())
     }
 }

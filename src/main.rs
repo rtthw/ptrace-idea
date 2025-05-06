@@ -6,7 +6,7 @@ mod init_seccomp;
 use std::os::unix::process::CommandExt as _;
 
 use anyhow::Result;
-use nix::{libc::ENOSYS, sys::{ptrace, signal::Signal, wait::wait}, unistd::Pid};
+use nix::{libc::{ENOSYS, PTRACE_EVENT_SECCOMP}, sys::{ptrace, signal::Signal, wait::wait}, unistd::Pid};
 
 
 
@@ -25,6 +25,7 @@ fn run_as_client() {
 
     // `Command::exec` doesn't change the PID, so we can just ask now.
     ptrace::traceme().expect("OS could not be bothered to trace me");
+    init_seccomp::Seccomp::new().activate().unwrap();
     let e = std::process::Command::new("./target/debug/client").exec();
 
     unreachable!("Command::exec failed, this process should be dead: {e}")
@@ -32,7 +33,7 @@ fn run_as_client() {
 
 fn run_as_server(pid: Pid) {
     let ws = wait().expect("server failed to wait for client to be ready");
-    println!("[INFO] Client ready with signal: {ws:?}");
+    println!("[INFO] Client {pid} ready with signal: {ws:?}");
 
     setup_tracing(pid).unwrap();
     ptrace::syscall(pid, None).unwrap();
@@ -60,11 +61,18 @@ fn wait_for_signal(rt: &mut Runtime) -> Result<()> {
             Ok(())
         }
 
-        nix::sys::wait::WaitStatus::PtraceEvent(pid, Signal::SIGTRAP, _) => {
-            println!("PtraceEvent.SIGTRAP for: {pid} ");
-            setup_tracing(pid)?;
-            ptrace::syscall(pid, Some(Signal::SIGTRAP))?;
+        nix::sys::wait::WaitStatus::PtraceEvent(pid, Signal::SIGTRAP, PTRACE_EVENT_SECCOMP) => {
+            println!("PTRACE_EVENT_SECCOMP @ {pid}");
+            // setup_tracing(pid)?;
+            // ptrace::syscall(pid, Some(Signal::SIGTRAP))?;
+            handle_sigtrap(rt, pid)
+        }
+
+        nix::sys::wait::WaitStatus::PtraceSyscall(pid) => {
+            println!("PTRACE_SYSCALL @ {pid}");
+            ptrace::cont(pid, None)?;
             Ok(())
+            // handle_sigtrap(rt, pid)
         }
 
         status => {
@@ -105,10 +113,12 @@ fn handle_sigtrap(rt: &mut Runtime, pid: Pid) -> Result<()> {
 fn setup_tracing(pid: Pid) -> Result<()> {
     ptrace::setoptions(
         pid,
-        ptrace::Options::PTRACE_O_TRACEFORK
+        ptrace::Options::PTRACE_O_TRACESECCOMP
             .union(ptrace::Options::PTRACE_O_TRACECLONE)
+            .union(ptrace::Options::PTRACE_O_TRACEFORK)
             .union(ptrace::Options::PTRACE_O_TRACEVFORK)
-            .union(ptrace::Options::PTRACE_O_TRACESYSGOOD),
+            .union(ptrace::Options::PTRACE_O_TRACEEXEC)
+            .union(ptrace::Options::PTRACE_O_TRACEVFORKDONE),
     )?;
 
     Ok(())
@@ -174,13 +184,16 @@ impl Runtime {
             }
             _ => {}
         }
+        // print!("ENTER ");
+        // print_syscall(&regs);
         ptrace::syscall(pid, None)?;
         Ok(())
     }
 
     pub fn on_syscall_exit(&mut self, pid: Pid, regs: &nix::libc::user_regs_struct) -> Result<()> {
-        print_syscall(&regs);
         ptrace::syscall(pid, None)?;
+        print!("EXIT ");
+        print_syscall(&regs);
         Ok(())
     }
 }

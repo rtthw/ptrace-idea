@@ -13,7 +13,45 @@ pub struct Seccomp {
 impl Seccomp {
     pub fn new() -> Self {
         Self {
-            bpf: Vec::new(),
+            bpf: vec![
+                libc::sock_filter {
+                    code: (libc::BPF_LD + libc::BPF_W + libc::BPF_ABS) as u16,
+                    k: 0,
+                    jt: 0,
+                    jf: 0,
+                },
+                libc::sock_filter {
+                    code: (libc::BPF_JMP + libc::BPF_JEQ + libc::BPF_K) as u16,
+                    k: 257, // openat
+                    jt: 0,
+                    jf: 1,
+                },
+                libc::sock_filter {
+                    code: (libc::BPF_RET + libc::BPF_K) as u16,
+                    k: libc::SECCOMP_RET_TRACE,
+                    jt: 0,
+                    jf: 0,
+                },
+                libc::sock_filter {
+                    code: (libc::BPF_JMP + libc::BPF_JEQ + libc::BPF_K) as u16,
+                    k: 262, // newfstatat
+                    jt: 0,
+                    jf: 1,
+                },
+                libc::sock_filter {
+                    code: (libc::BPF_RET + libc::BPF_K) as u16,
+                    k: libc::SECCOMP_RET_TRACE,
+                    jt: 0,
+                    jf: 0,
+                },
+
+                libc::sock_filter {
+                    code: (libc::BPF_RET + libc::BPF_K) as u16,
+                    k: libc::SECCOMP_RET_ALLOW,
+                    jt: 0,
+                    jf: 0,
+                },
+            ],
         }
     }
 
@@ -34,7 +72,7 @@ impl Seccomp {
         let result = syscall3(
             libc::SYS_seccomp as _,
             libc::SECCOMP_SET_MODE_FILTER as usize,
-            libc::SECCOMP_FILTER_FLAG_NEW_LISTENER as usize,
+            0,
             &program as *const libc::sock_fprog as usize,
         );
 
@@ -69,3 +107,11 @@ pub fn syscall3(
     ) };
     ret
 }
+
+
+const __AUDIT_ARCH_64BIT: u32 = 0x8000_0000;
+const __AUDIT_ARCH_LE: u32 = 0x4000_0000;
+const AUDIT_ARCH_X86_64: u32 = libc::EM_X86_64 as u32 | __AUDIT_ARCH_64BIT | __AUDIT_ARCH_LE;
+
+#[cfg(target_arch="x86_64")]
+const ARCH_NR: u32 = AUDIT_ARCH_X86_64;

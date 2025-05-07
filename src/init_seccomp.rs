@@ -11,49 +11,15 @@ pub struct Seccomp {
 }
 
 impl Seccomp {
-    pub fn new() -> Self {
+    pub fn new(rules: &[FilterRule]) -> Self {
+        let mut bpf = Vec::new();
+
+        for rule in rules {
+            rule.add_to_bpf(&mut bpf);
+        }
+
         Self {
-            bpf: vec![
-                libc::sock_filter {
-                    code: (libc::BPF_LD + libc::BPF_W + libc::BPF_ABS) as u16,
-                    k: 0,
-                    jt: 0,
-                    jf: 0,
-                },
-
-                libc::sock_filter {
-                    code: (libc::BPF_JMP + libc::BPF_JEQ + libc::BPF_K) as u16,
-                    k: 257, // openat
-                    jt: 0,
-                    jf: 1,
-                },
-                libc::sock_filter {
-                    code: (libc::BPF_RET + libc::BPF_K) as u16,
-                    k: libc::SECCOMP_RET_TRACE,
-                    jt: 0,
-                    jf: 0,
-                },
-
-                libc::sock_filter {
-                    code: (libc::BPF_JMP + libc::BPF_JEQ + libc::BPF_K) as u16,
-                    k: 262, // newfstatat
-                    jt: 0,
-                    jf: 1,
-                },
-                libc::sock_filter {
-                    code: (libc::BPF_RET + libc::BPF_K) as u16,
-                    k: libc::SECCOMP_RET_TRACE,
-                    jt: 0,
-                    jf: 0,
-                },
-
-                libc::sock_filter {
-                    code: (libc::BPF_RET + libc::BPF_K) as u16,
-                    k: libc::SECCOMP_RET_ALLOW,
-                    jt: 0,
-                    jf: 0,
-                },
-            ],
+            bpf,
         }
     }
 
@@ -83,6 +49,52 @@ impl Seccomp {
             Ok(())
         } else {
             Err(result)
+        }
+    }
+}
+
+pub enum FilterRule {
+    LoadSyscall,
+    IfSyscallIs(u32),
+    AllowSyscall,
+    TraceSyscall,
+}
+
+impl FilterRule {
+    fn add_to_bpf(&self, bpf: &mut Vec<libc::sock_filter>) {
+        match self {
+            FilterRule::LoadSyscall => {
+                bpf.push(libc::sock_filter {
+                    code: (libc::BPF_LD + libc::BPF_W + libc::BPF_ABS) as u16,
+                    k: 0,
+                    jt: 0,
+                    jf: 0,
+                });
+            }
+            FilterRule::IfSyscallIs(n) => {
+                bpf.push(libc::sock_filter {
+                    code: (libc::BPF_JMP + libc::BPF_JEQ + libc::BPF_K) as u16,
+                    k: *n,
+                    jt: 0,
+                    jf: 1,
+                });
+            }
+            FilterRule::AllowSyscall => {
+                bpf.push(libc::sock_filter {
+                    code: (libc::BPF_RET + libc::BPF_K) as u16,
+                    k: libc::SECCOMP_RET_ALLOW,
+                    jt: 0,
+                    jf: 0,
+                });
+            }
+            FilterRule::TraceSyscall => {
+                bpf.push(libc::sock_filter {
+                    code: (libc::BPF_RET + libc::BPF_K) as u16,
+                    k: libc::SECCOMP_RET_TRACE,
+                    jt: 0,
+                    jf: 0,
+                });
+            }
         }
     }
 }

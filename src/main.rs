@@ -6,6 +6,7 @@ mod init_seccomp;
 use std::os::unix::process::CommandExt as _;
 
 use anyhow::Result;
+use init_seccomp::*;
 use nix::{libc::{ENOSYS, PTRACE_EVENT_SECCOMP}, sys::{ptrace, signal::Signal, wait::wait}, unistd::Pid};
 
 
@@ -25,7 +26,15 @@ fn run_as_client() {
 
     // `Command::exec` doesn't change the PID, so we can just ask now.
     ptrace::traceme().expect("OS could not be bothered to trace me");
-    init_seccomp::Seccomp::new().activate().unwrap();
+    Seccomp::new(&[
+        FilterRule::LoadSyscall,
+        FilterRule::IfSyscallIs(257),
+        FilterRule::TraceSyscall,
+        FilterRule::IfSyscallIs(262),
+        FilterRule::TraceSyscall,
+
+        FilterRule::AllowSyscall,
+    ]).activate().unwrap();
     let e = std::process::Command::new("./target/debug/client").exec();
 
     unreachable!("Command::exec failed, this process should be dead: {e}")

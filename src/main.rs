@@ -72,9 +72,7 @@ fn wait_for_signal(rt: &mut Runtime) -> Result<()> {
 
         nix::sys::wait::WaitStatus::PtraceEvent(pid, Signal::SIGTRAP, PTRACE_EVENT_SECCOMP) => {
             println!("PTRACE_EVENT_SECCOMP @ {pid}");
-            // setup_tracing(pid)?;
-            // ptrace::syscall(pid, Some(Signal::SIGTRAP))?;
-            handle_sigtrap(rt, pid)
+            rt.handle_syscall(pid, Syscall::get(pid)?)
         }
 
         nix::sys::wait::WaitStatus::PtraceSyscall(pid) => {
@@ -93,7 +91,9 @@ fn wait_for_signal(rt: &mut Runtime) -> Result<()> {
 
 fn handle_client_stopped(rt: &mut Runtime, sig: Signal, pid: Pid) -> Result<()> {
     match sig {
-        Signal::SIGTRAP => handle_sigtrap(rt, pid),
+        Signal::SIGTRAP => {
+            rt.handle_syscall(pid, Syscall::get(pid)?)
+        }
         Signal::SIGSTOP => {
             println!("SIGSTOP in {pid}");
             Ok(ptrace::syscall(pid, Some(Signal::SIGSTOP))?)
@@ -107,15 +107,6 @@ fn handle_client_stopped(rt: &mut Runtime, sig: Signal, pid: Pid) -> Result<()> 
             println!("Stopped with unexpected signal: {sig:?}");
             Ok(ptrace::syscall(pid, Some(sig))?)
         }
-    }
-}
-
-fn handle_sigtrap(rt: &mut Runtime, pid: Pid) -> Result<()> {
-    let regs = ptrace::getregs(pid)?;
-    if regs.rax == -ENOSYS as u64 {
-        rt.on_syscall_enter(pid, &regs)
-    } else {
-        rt.on_syscall_exit(pid, &regs)
     }
 }
 
@@ -184,25 +175,33 @@ fn print_syscall(regs: &nix::libc::user_regs_struct) {
 pub struct Runtime {}
 
 impl Runtime {
-    pub fn on_syscall_enter(&mut self, pid: Pid, regs: &nix::libc::user_regs_struct) -> Result<()> {
-        match regs.orig_rax {
-            12 => {
-                if regs.rdi == 555 {
-                    println!("[INFO] Received custom syscall");
-                }
-            }
-            _ => {}
+    pub fn handle_syscall(&mut self, pid: Pid, syscall: Syscall) -> Result<()> {
+        if syscall.is_entry() {
+            ptrace::syscall(pid, None)?;
+        } else {
+            ptrace::syscall(pid, None)?;
+            print!("EXIT ");
+            print_syscall(&syscall.regs);
         }
-        // print!("ENTER ");
-        // print_syscall(&regs);
-        ptrace::syscall(pid, None)?;
+
         Ok(())
     }
+}
 
-    pub fn on_syscall_exit(&mut self, pid: Pid, regs: &nix::libc::user_regs_struct) -> Result<()> {
-        ptrace::syscall(pid, None)?;
-        print!("EXIT ");
-        print_syscall(&regs);
-        Ok(())
+
+
+pub struct Syscall {
+    regs: nix::libc::user_regs_struct,
+}
+
+impl Syscall {
+    pub fn get(pid: Pid) -> Result<Self> {
+        Ok(Self {
+            regs: ptrace::getregs(pid)?,
+        })
+    }
+
+    pub fn is_entry(&self) -> bool {
+        self.regs.rax == -ENOSYS as u64
     }
 }

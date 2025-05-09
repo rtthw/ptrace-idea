@@ -2,6 +2,7 @@
 
 
 
+use anyhow::Result;
 use nix::libc;
 
 
@@ -23,12 +24,12 @@ impl Seccomp {
         }
     }
 
-    pub fn activate(&mut self) -> Result<(), usize> {
+    pub fn activate(&mut self) -> Result<()> {
         // Ensure the `no_new_privs` bit is set.
         unsafe {
             let result = libc::prctl(libc::PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0);
             if result != 0 {
-                return Err(result as usize)
+                anyhow::bail!(result as usize)
             }
         }
 
@@ -48,7 +49,7 @@ impl Seccomp {
         if result == 0 {
             Ok(())
         } else {
-            Err(result)
+            anyhow::bail!(result)
         }
     }
 }

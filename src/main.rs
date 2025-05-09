@@ -11,40 +11,48 @@ use nix::{libc::{ENOSYS, PTRACE_EVENT_SECCOMP}, sys::{ptrace, signal::Signal, wa
 
 
 
-fn main() {
+fn main() -> Result<()> {
     println!("[INFO] Server PID: {}", std::process::id());
 
     match unsafe { nix::unistd::fork() } {
         Ok(nix::unistd::ForkResult::Child) => run_as_client(),
         Ok(nix::unistd::ForkResult::Parent { child }) => run_as_server(child),
         Err(e) => panic!("[FATAL] Couldn't fork the main process: {}", e),
-    };
+    }
 }
 
-fn run_as_client() {
+fn run_as_client() -> Result<()> {
     println!("[INFO] Client PID: {}", std::process::id());
 
     // `Command::exec` doesn't change the PID, so we can just ask now.
-    ptrace::traceme().expect("OS could not be bothered to trace me");
+    ptrace::traceme()?;
     Seccomp::new(&[
         FilterRule::LoadSyscall,
         FilterRule::IfSyscallIs(257),
         FilterRule::TraceSyscall,
         FilterRule::IfSyscallIs(262),
         FilterRule::TraceSyscall,
-
+        // ... Otherwise, do this:
         FilterRule::AllowSyscall,
-    ]).activate().unwrap();
+    ]).activate()?;
     let e = std::process::Command::new("./target/debug/client").exec();
 
-    unreachable!("Command::exec failed, this process should be dead: {e}")
+    unreachable!("[FATAL] Command::exec failed, this process should be dead: {e}")
 }
 
-fn run_as_server(pid: Pid) {
-    let ws = wait().expect("server failed to wait for client to be ready");
+fn run_as_server(pid: Pid) -> Result<()> {
+    let ws = wait().expect("[ERROR] Server failed to wait for client to be ready");
     println!("[INFO] Client {pid} ready with signal: {ws:?}");
 
-    setup_tracing(pid).unwrap();
+    ptrace::setoptions(
+        pid,
+        ptrace::Options::PTRACE_O_TRACESECCOMP
+            .union(ptrace::Options::PTRACE_O_TRACECLONE)
+            .union(ptrace::Options::PTRACE_O_TRACEFORK)
+            .union(ptrace::Options::PTRACE_O_TRACEVFORK)
+            .union(ptrace::Options::PTRACE_O_TRACEEXEC)
+            .union(ptrace::Options::PTRACE_O_TRACEVFORKDONE),
+    ).unwrap();
     ptrace::syscall(pid, None).unwrap();
 
     let mut rt = Runtime {};
@@ -57,6 +65,8 @@ fn run_as_server(pid: Pid) {
             }
         }
     }
+
+    Ok(())
 }
 
 fn wait_for_signal(rt: &mut Runtime) -> Result<()> {
@@ -64,27 +74,21 @@ fn wait_for_signal(rt: &mut Runtime) -> Result<()> {
         nix::sys::wait::WaitStatus::Stopped(pid, sig) => {
             handle_client_stopped(rt, sig, pid)
         }
-
         nix::sys::wait::WaitStatus::Exited(pid, exit_status) => {
             println!("Child with pid: {} exited with status {}", pid, exit_status);
             Ok(())
         }
-
         nix::sys::wait::WaitStatus::PtraceEvent(pid, Signal::SIGTRAP, PTRACE_EVENT_SECCOMP) => {
             println!("PTRACE_EVENT_SECCOMP @ {pid}");
             rt.handle_syscall(pid, Syscall::get(pid)?)
         }
-
         nix::sys::wait::WaitStatus::PtraceSyscall(pid) => {
             println!("PTRACE_SYSCALL @ {pid}");
             ptrace::cont(pid, None)?;
             Ok(())
-            // handle_sigtrap(rt, pid)
         }
-
         status => {
-            println!("Received unhandled wait status: {:?}", status);
-            Ok(())
+            anyhow::bail!("[FATAL] Received unhandled wait status: {:?}", status)
         }
     }
 }
@@ -108,20 +112,6 @@ fn handle_client_stopped(rt: &mut Runtime, sig: Signal, pid: Pid) -> Result<()> 
             Ok(ptrace::syscall(pid, Some(sig))?)
         }
     }
-}
-
-fn setup_tracing(pid: Pid) -> Result<()> {
-    ptrace::setoptions(
-        pid,
-        ptrace::Options::PTRACE_O_TRACESECCOMP
-            .union(ptrace::Options::PTRACE_O_TRACECLONE)
-            .union(ptrace::Options::PTRACE_O_TRACEFORK)
-            .union(ptrace::Options::PTRACE_O_TRACEVFORK)
-            .union(ptrace::Options::PTRACE_O_TRACEEXEC)
-            .union(ptrace::Options::PTRACE_O_TRACEVFORKDONE),
-    )?;
-
-    Ok(())
 }
 
 

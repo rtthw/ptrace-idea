@@ -80,7 +80,7 @@ fn wait_for_signal(rt: &mut Runtime) -> Result<()> {
         }
         nix::sys::wait::WaitStatus::PtraceEvent(pid, Signal::SIGTRAP, PTRACE_EVENT_SECCOMP) => {
             println!("PTRACE_EVENT_SECCOMP @ {pid}");
-            rt.handle_syscall(pid, Syscall::get(pid)?)
+            rt.handle_syscall(Syscall::get(pid)?)
         }
         nix::sys::wait::WaitStatus::PtraceSyscall(pid) => {
             println!("PTRACE_SYSCALL @ {pid}");
@@ -96,7 +96,7 @@ fn wait_for_signal(rt: &mut Runtime) -> Result<()> {
 fn handle_client_stopped(rt: &mut Runtime, sig: Signal, pid: Pid) -> Result<()> {
     match sig {
         Signal::SIGTRAP => {
-            rt.handle_syscall(pid, Syscall::get(pid)?)
+            rt.handle_syscall(Syscall::get(pid)?)
         }
         Signal::SIGSTOP => {
             println!("SIGSTOP in {pid}");
@@ -165,13 +165,12 @@ fn print_syscall(regs: &nix::libc::user_regs_struct) {
 pub struct Runtime {}
 
 impl Runtime {
-    pub fn handle_syscall(&mut self, pid: Pid, syscall: Syscall) -> Result<()> {
+    pub fn handle_syscall(&mut self, syscall: Syscall) -> Result<()> {
         if syscall.is_entry() {
-            ptrace::syscall(pid, None)?;
+            syscall.allow(None)?;
         } else {
-            ptrace::syscall(pid, None)?;
-            print!("EXIT ");
-            print_syscall(&syscall.regs);
+            syscall.print();
+            syscall.allow(None)?;
         }
 
         Ok(())
@@ -181,17 +180,28 @@ impl Runtime {
 
 
 pub struct Syscall {
+    pid: Pid,
     regs: nix::libc::user_regs_struct,
 }
 
 impl Syscall {
     pub fn get(pid: Pid) -> Result<Self> {
         Ok(Self {
+            pid,
             regs: ptrace::getregs(pid)?,
         })
     }
 
     pub fn is_entry(&self) -> bool {
         self.regs.rax == -ENOSYS as u64
+    }
+
+    pub fn print(&self) {
+        print_syscall(&self.regs);
+    }
+
+    pub fn allow(self, signal: impl Into<Option<Signal>>) -> Result<()> {
+        ptrace::syscall(self.pid, signal)?;
+        Ok(())
     }
 }

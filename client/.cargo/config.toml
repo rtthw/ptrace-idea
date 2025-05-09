@@ -1,0 +1,5 @@
+
+
+
+[target.'cfg(target_os = "linux")']
+rustflags = ["-Ctarget-cpu=native", "-Clink-args=-nostartfiles"]

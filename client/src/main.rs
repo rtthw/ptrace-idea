@@ -1,22 +1,30 @@
 
 
 
-fn main() {
-    println!("...")
+#![no_std]
+#![no_main]
+
+
+
+use core::arch::asm;
+
+
+
+#[unsafe(no_mangle)]
+pub extern "C" fn _start() -> ! {
+    unsafe {
+        asm!(
+            "mov edi, 0",
+            "mov eax, 60",
+            "syscall",
+            options(nostack, noreturn)
+        )
+    }
 }
 
 
 
-#[inline]
-pub fn syscall1(n: usize, arg1: usize) -> usize {
-    let mut ret: usize;
-    unsafe { core::arch::asm!(
-        "syscall",
-        inlateout("rax") n => ret,
-        in("rdi") arg1,
-        out("rcx") _, // rcx is used to store old rip
-        out("r11") _, // r11 is used to store old rflags
-        options(nostack, preserves_flags)
-    ) };
-    ret
+#[panic_handler]
+fn my_panic(_info: &core::panic::PanicInfo) -> ! {
+    loop {}
 }

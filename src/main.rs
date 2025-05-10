@@ -26,15 +26,7 @@ fn run_as_client() -> Result<()> {
 
     // `Command::exec` doesn't change the PID, so we can just ask now.
     ptrace::traceme()?;
-    Seccomp::new(&[
-        FilterRule::LoadSyscall,
-        FilterRule::IfSyscallIs(257),
-        FilterRule::TraceSyscall,
-        FilterRule::IfSyscallIs(262),
-        FilterRule::TraceSyscall,
-        // ... Otherwise, do this:
-        FilterRule::AllowSyscall,
-    ]).activate()?;
+    Seccomp::new(init_seccomp::DEFAULT_RULES).activate()?;
     let e = std::process::Command::new("./target/debug/client").exec();
 
     unreachable!("[\x1b[31mFATAL\x1b[0m] Command::exec failed, this process should be dead: {e}")
@@ -46,14 +38,9 @@ fn run_as_server(pid: Pid) -> Result<()> {
 
     ptrace::setoptions(
         pid,
-        ptrace::Options::PTRACE_O_TRACESECCOMP
-            .union(ptrace::Options::PTRACE_O_TRACECLONE)
-            .union(ptrace::Options::PTRACE_O_TRACEFORK)
-            .union(ptrace::Options::PTRACE_O_TRACEVFORK)
-            .union(ptrace::Options::PTRACE_O_TRACEEXEC)
-            .union(ptrace::Options::PTRACE_O_TRACEVFORKDONE),
-    ).unwrap();
-    ptrace::syscall(pid, None).unwrap();
+        ptrace::Options::PTRACE_O_TRACESECCOMP,
+    )?;
+    ptrace::syscall(pid, None)?;
 
     let mut rt = Runtime {};
     loop {

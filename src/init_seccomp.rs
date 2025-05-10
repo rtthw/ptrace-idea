@@ -7,6 +7,79 @@ use nix::libc;
 
 
 
+pub const DEFAULT_RULES: &[FilterRule] = &[
+    FilterRule::LoadSyscall,
+
+    FilterRule::IfSyscallIs(libc::SYS_read as u32),
+    FilterRule::AllowSyscall,
+    FilterRule::IfSyscallIs(libc::SYS_write as u32),
+    FilterRule::AllowSyscall,
+
+    FilterRule::IfSyscallIs(libc::SYS_access as u32),
+    FilterRule::TraceSyscall,
+    FilterRule::IfSyscallIs(libc::SYS_fstat as u32),
+    FilterRule::TraceSyscall,
+    FilterRule::IfSyscallIs(libc::SYS_statx as u32),
+    FilterRule::AllowSyscall,
+    FilterRule::IfSyscallIs(libc::SYS_newfstatat as u32),
+    FilterRule::AllowSyscall,
+
+    FilterRule::IfSyscallIs(libc::SYS_open as u32),
+    FilterRule::AllowSyscall,
+    FilterRule::IfSyscallIs(libc::SYS_openat as u32),
+    FilterRule::AllowSyscall,
+    FilterRule::IfSyscallIs(libc::SYS_close as u32),
+    FilterRule::AllowSyscall,
+
+    FilterRule::IfSyscallIs(libc::SYS_dup as u32),
+    FilterRule::AllowSyscall,
+
+    FilterRule::IfSyscallIs(libc::SYS_mmap as u32),
+    FilterRule::AllowSyscall,
+    FilterRule::IfSyscallIs(libc::SYS_mprotect as u32),
+    FilterRule::AllowSyscall,
+
+    FilterRule::IfSyscallIs(libc::SYS_brk as u32),
+    FilterRule::AllowSyscall,
+    FilterRule::IfSyscallIs(libc::SYS_exit as u32),
+    FilterRule::AllowSyscall,
+    FilterRule::IfSyscallIs(libc::SYS_rseq as u32),
+    FilterRule::AllowSyscall,
+
+    FilterRule::IfSyscallIs(libc::SYS_prctl as u32),
+    FilterRule::AllowSyscall,
+
+    FilterRule::IfSyscallIs(libc::SYS_gettid as u32),
+    FilterRule::AllowSyscall,
+    FilterRule::IfSyscallIs(libc::SYS_set_tid_address as u32),
+    FilterRule::AllowSyscall,
+    FilterRule::IfSyscallIs(libc::SYS_set_robust_list as u32),
+    FilterRule::AllowSyscall,
+
+    FilterRule::IfSyscallIs(libc::SYS_rt_sigaction as u32),
+    FilterRule::AllowSyscall,
+    FilterRule::IfSyscallIs(libc::SYS_rt_sigreturn as u32),
+    FilterRule::AllowSyscall,
+    FilterRule::IfSyscallIs(libc::SYS_rt_sigprocmask as u32),
+    FilterRule::AllowSyscall,
+    FilterRule::IfSyscallIs(libc::SYS_sigaltstack as u32),
+    FilterRule::TraceSyscall,
+
+    FilterRule::IfSyscallIs(libc::SYS_clone as u32),
+    FilterRule::TraceSyscall,
+    FilterRule::IfSyscallIs(libc::SYS_fork as u32),
+    FilterRule::TraceSyscall,
+    FilterRule::IfSyscallIs(libc::SYS_execve as u32),
+    FilterRule::AllowSyscall,
+
+    // FilterRule::IfSyscallIs(158), // arch_prctl
+    // FilterRule::TraceSyscall,
+
+    FilterRule::TraceSyscall,
+];
+
+
+
 pub struct Seccomp {
     bpf: Vec<libc::sock_filter>,
 }
@@ -59,6 +132,7 @@ pub enum FilterRule {
     IfSyscallIs(u32),
     AllowSyscall,
     TraceSyscall,
+    KillProcess,
 }
 
 impl FilterRule {
@@ -92,6 +166,14 @@ impl FilterRule {
                 bpf.push(libc::sock_filter {
                     code: (libc::BPF_RET + libc::BPF_K) as u16,
                     k: libc::SECCOMP_RET_TRACE,
+                    jt: 0,
+                    jf: 0,
+                });
+            }
+            FilterRule::KillProcess => {
+                bpf.push(libc::sock_filter {
+                    code: (libc::BPF_RET + libc::BPF_K) as u16,
+                    k: libc::SECCOMP_RET_KILL,
                     jt: 0,
                     jf: 0,
                 });

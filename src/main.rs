@@ -12,17 +12,17 @@ use nix::{libc::{ENOSYS, PTRACE_EVENT_SECCOMP}, sys::{ptrace, signal::Signal, wa
 
 
 fn main() -> Result<()> {
-    println!("[INFO] Server PID: {}", std::process::id());
+    println!("[\x1b[33mINFO\x1b[0m] Server PID: {}", std::process::id());
 
     match unsafe { nix::unistd::fork() } {
         Ok(nix::unistd::ForkResult::Child) => run_as_client(),
         Ok(nix::unistd::ForkResult::Parent { child }) => run_as_server(child),
-        Err(e) => panic!("[FATAL] Couldn't fork the main process: {}", e),
+        Err(e) => panic!("[\x1b[31mFATAL\x1b[0m] Couldn't fork the main process: {}", e),
     }
 }
 
 fn run_as_client() -> Result<()> {
-    println!("[INFO] Client PID: {}", std::process::id());
+    println!("[\x1b[33mINFO\x1b[0m] Client PID: {}", std::process::id());
 
     // `Command::exec` doesn't change the PID, so we can just ask now.
     ptrace::traceme()?;
@@ -37,12 +37,12 @@ fn run_as_client() -> Result<()> {
     ]).activate()?;
     let e = std::process::Command::new("./target/debug/client").exec();
 
-    unreachable!("[FATAL] Command::exec failed, this process should be dead: {e}")
+    unreachable!("[\x1b[31mFATAL\x1b[0m] Command::exec failed, this process should be dead: {e}")
 }
 
 fn run_as_server(pid: Pid) -> Result<()> {
-    let ws = wait().expect("[ERROR] Server failed to wait for client to be ready");
-    println!("[INFO] Client {pid} ready with signal: {ws:?}");
+    let ws = wait().expect("[\x1b[31mERROR\x1b[0m] Server failed to wait for client to be ready");
+    println!("[\x1b[33mINFO\x1b[0m] Client {pid} ready with signal: {ws:?}");
 
     ptrace::setoptions(
         pid,
@@ -60,7 +60,7 @@ fn run_as_server(pid: Pid) -> Result<()> {
         match wait_for_signal(&mut rt) {
             Ok(_) => {}
             Err(e) => {
-                println!("Error: {e}");
+                println!("[\x1b[31mERROR\x1b[0m] {e}");
                 break;
             }
         }
@@ -148,6 +148,13 @@ fn print_syscall(regs: &nix::libc::user_regs_struct) {
         30 => println!("shmat(shmid={}, shmaddr={}, shmflg={})", regs.rdi, regs.rsi, regs.rdx),
         31 => println!("shmctl(shmid={}, cmd={}, buf={})", regs.rdi, regs.rsi, regs.rdx),
 
+        158 => println!("arch_prctl(task={}, code={}, addr={})", regs.rdi, regs.rsi, regs.rdx),
+        218 => println!("set_tid_address(tidptr={})", regs.rdi),
+        219 => println!("restart_syscall()"),
+        273 => println!("set_robust_list(head={}, len={})", regs.rdi, regs.rsi),
+        274 => println!("get_robust_list(pid={}, head_ptr={}, len_ptr={})",
+            regs.rdi, regs.rsi, regs.rdx),
+
         257 => println!("openat(dfd={}, filename={}, flags={}, mode={})",
             regs.rdi, regs.rsi, regs.rdx, regs.r10),
         262 => println!("newfstatat(dfd={}, filename={}, statbuf={}, flags={})",
@@ -155,6 +162,8 @@ fn print_syscall(regs: &nix::libc::user_regs_struct) {
 
         317 => println!("seccomp(op={}, flags={}, uargs={})", regs.rdi, regs.rsi, regs.rdx),
         318 => println!("getrandom(buf={}, count={}, flags={})", regs.rdi, regs.rsi, regs.rdx),
+
+        334 => println!("rseq()"),
 
         other => println!("Unknown Syscall: {other}"),
     }
@@ -197,6 +206,7 @@ impl Syscall {
     }
 
     pub fn print(&self) {
+        print!("[\x1b[33mINFO\x1b[0m @ {}] Syscall: ", self.pid);
         print_syscall(&self.regs);
     }
 

@@ -26,7 +26,7 @@ fn run_as_client() -> Result<()> {
     Seccomp::new(init_seccomp::DEFAULT_RULES).activate()?;
     nix::unistd::execve(c"./target/debug/client", &[c""], &[c""])?;
 
-    unsafe { nix::libc::exit(0) }
+    sys::exit(0)
 }
 
 fn run_as_server(pid: Pid) -> Result<()> {

@@ -8,8 +8,7 @@
 
 #[unsafe(no_mangle)]
 pub extern "C" fn _start() -> ! {
-    sys::call1(60, 0);
-    loop {}
+    sys::exit(0)
 }
 
 

@@ -3,8 +3,6 @@
 
 mod init_seccomp;
 
-use std::os::unix::process::CommandExt as _;
-
 use anyhow::Result;
 use init_seccomp::*;
 use nix::{libc::{ENOSYS, PTRACE_EVENT_SECCOMP}, sys::{ptrace, signal::Signal, wait::wait}, unistd::Pid};
@@ -12,7 +10,7 @@ use nix::{libc::{ENOSYS, PTRACE_EVENT_SECCOMP}, sys::{ptrace, signal::Signal, wa
 
 
 fn main() -> Result<()> {
-    println!("[\x1b[33mINFO\x1b[0m] Server PID: {}", std::process::id());
+    println!("[\x1b[33mINFO\x1b[0m] Server PID: {}", get_pid());
 
     match unsafe { nix::unistd::fork() } {
         Ok(nix::unistd::ForkResult::Child) => run_as_client(),
@@ -22,14 +20,13 @@ fn main() -> Result<()> {
 }
 
 fn run_as_client() -> Result<()> {
-    println!("[\x1b[33mINFO\x1b[0m] Client PID: {}", std::process::id());
+    println!("[\x1b[33mINFO\x1b[0m] Client PID: {}", get_pid());
 
-    // `Command::exec` doesn't change the PID, so we can just ask now.
     ptrace::traceme()?;
     Seccomp::new(init_seccomp::DEFAULT_RULES).activate()?;
-    let e = std::process::Command::new("./target/debug/client").exec();
+    nix::unistd::execve(c"./target/debug/client", &[c""], &[c""])?;
 
-    unreachable!("[\x1b[31mFATAL\x1b[0m] Command::exec failed, this process should be dead: {e}")
+    unsafe { nix::libc::exit(0) }
 }
 
 fn run_as_server(pid: Pid) -> Result<()> {
@@ -154,6 +151,10 @@ fn print_syscall(regs: &nix::libc::user_regs_struct) {
 
         other => println!("Unknown Syscall: {other}"),
     }
+}
+
+fn get_pid() -> i32 {
+    unsafe { nix::libc::getpid() }
 }
 
 

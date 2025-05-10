@@ -6,20 +6,10 @@
 
 
 
-use core::arch::asm;
-
-
-
 #[unsafe(no_mangle)]
 pub extern "C" fn _start() -> ! {
-    unsafe {
-        asm!(
-            "mov edi, 0",
-            "mov eax, 60",
-            "syscall",
-            options(nostack, noreturn)
-        )
-    }
+    sys::syscall1(60, 0);
+    loop {}
 }
 
 

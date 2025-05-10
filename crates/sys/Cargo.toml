@@ -1,7 +1,6 @@
 [package]
-name = "client"
+name = "sys"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-sys.workspace = true

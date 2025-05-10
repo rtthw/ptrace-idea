@@ -1,5 +1,5 @@
 [workspace]
-members = ["client"]
+members = ["client", "crates/sys"]
 
 [package]
 name = "ptrace-idea"
@@ -14,6 +14,9 @@ nix = { version = "0.29", features = [
     "process",
     "ptrace",
 ] }
+
+[workspace.dependencies]
+sys = { path = "crates/sys" }
 
 [profile.dev]
 panic = "abort"

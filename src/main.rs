@@ -53,47 +53,51 @@ fn run_as_server(pid: Pid) -> Result<()> {
     Ok(())
 }
 
+
+
 fn wait_for_signal(rt: &mut Runtime) -> Result<()> {
     match wait()? {
         nix::sys::wait::WaitStatus::Stopped(pid, sig) => {
-            handle_client_stopped(rt, sig, pid)
+            match sig {
+                Signal::SIGTRAP => {
+                    rt.handle_syscall(Syscall::get(pid)?)
+                }
+                Signal::SIGSTOP => Ok(ptrace::syscall(pid, Some(Signal::SIGSTOP))?),
+                Signal::SIGSEGV => Ok(ptrace::syscall(pid, Some(Signal::SIGSEGV))?),
+                Signal::SIGWINCH => Ok(ptrace::syscall(pid, Some(Signal::SIGWINCH))?),
+                _ => {
+                    println!("[\x1b[31mFATAL\x1b[0m] Stopped with unexpected signal: {sig:?}");
+                    Ok(ptrace::syscall(pid, Some(sig))?)
+                }
+            }
         }
         nix::sys::wait::WaitStatus::Exited(pid, exit_status) => {
-            println!("Child with pid: {} exited with status {}", pid, exit_status);
+            if exit_status == 0 {
+                println!(
+                    "[\x1b[32mINFO\x1b[0m] Child with pid: {} exited with status {}",
+                    pid,
+                    exit_status,
+                );
+            } else {
+                println!(
+                    "[\x1b[31mERROR\x1b[0m] Child with pid: {} exited with non-zero status {}",
+                    pid,
+                    exit_status,
+                );
+            }
             Ok(())
         }
         nix::sys::wait::WaitStatus::PtraceEvent(pid, Signal::SIGTRAP, PTRACE_EVENT_SECCOMP) => {
-            println!("PTRACE_EVENT_SECCOMP @ {pid}");
+            println!("[\x1b[33mINFO\x1b[0m] PTRACE_EVENT_SECCOMP @ {pid}");
             rt.handle_syscall(Syscall::get(pid)?)
         }
         nix::sys::wait::WaitStatus::PtraceSyscall(pid) => {
-            println!("PTRACE_SYSCALL @ {pid}");
+            println!("[\x1b[33mINFO\x1b[0m] PTRACE_SYSCALL @ {pid}");
             ptrace::cont(pid, None)?;
             Ok(())
         }
         status => {
-            anyhow::bail!("[FATAL] Received unhandled wait status: {:?}", status)
-        }
-    }
-}
-
-fn handle_client_stopped(rt: &mut Runtime, sig: Signal, pid: Pid) -> Result<()> {
-    match sig {
-        Signal::SIGTRAP => {
-            rt.handle_syscall(Syscall::get(pid)?)
-        }
-        Signal::SIGSTOP => {
-            println!("SIGSTOP in {pid}");
-            Ok(ptrace::syscall(pid, Some(Signal::SIGSTOP))?)
-        }
-        Signal::SIGSEGV => Ok(ptrace::syscall(pid, Some(Signal::SIGSEGV))?),
-        Signal::SIGWINCH => {
-            println!("Received SIGWINCH");
-            Ok(ptrace::syscall(pid, Some(Signal::SIGWINCH))?)
-        }
-        _ => {
-            println!("Stopped with unexpected signal: {sig:?}");
-            Ok(ptrace::syscall(pid, Some(sig))?)
+            anyhow::bail!("[\x1b[31mFATAL\x1b[0m] Received unhandled wait status: {:?}", status)
         }
     }
 }

@@ -168,9 +168,9 @@ pub struct Runtime {}
 impl Runtime {
     pub fn handle_syscall(&mut self, syscall: Syscall) -> Result<()> {
         if syscall.is_entry() {
+            syscall.print();
             syscall.allow(None)?;
         } else {
-            syscall.print();
             syscall.allow(None)?;
         }
 

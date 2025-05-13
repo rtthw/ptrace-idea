@@ -11,6 +11,10 @@ pub use call::*;
 
 
 
+pub const SYS_CUSTOM: u64 = 292001;
+
+
+
 unsafe extern "C" {
     #[link_name = "__errno_location"]
     pub fn errno_location() -> *mut core::ffi::c_int;

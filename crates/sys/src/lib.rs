@@ -6,12 +6,10 @@
 
 
 mod call;
+mod defs;
 
 pub use call::*;
-
-
-
-pub const SYS_CUSTOM: u64 = 292001;
+pub use defs::*;
 
 
 

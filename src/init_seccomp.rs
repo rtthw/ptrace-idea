@@ -10,7 +10,7 @@ use nix::libc;
 pub const DEFAULT_RULES: &[FilterRule] = &[
     FilterRule::LoadSyscall,
 
-    FilterRule::IfSyscallIs(sys::SYS_CUSTOM as u32),
+    FilterRule::IfSyscallIs(sys::SYS_CUSTOM),
     FilterRule::TraceSyscall,
 
     FilterRule::IfSyscallIs(libc::SYS_read as u32),
